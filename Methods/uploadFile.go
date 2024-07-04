@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/joho/godotenv"
+	"github.com/labstack/echo/v4"
 	"io"
 	"log"
 	"net/http"
@@ -13,12 +15,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
 	"tg/telegram-storage/Handlers"
 )
 
-func UploadWithCmd(c echo.Context) error {
+func UploadFile(c echo.Context) error {
 	type File struct {
 		FileName string `json:"file_name"`
 		FileSize int    `json:"file_size"`
@@ -107,22 +107,35 @@ func UploadWithCmd(c echo.Context) error {
 				return c.JSON(http.StatusGone, err)
 			}
 
-			if err := Handlers.ZipNSplit(dst.Name()); err != nil {
-				fmt.Println(err)
-			}
+			fileStat, _ := dst.Stat()
+			fileSize := fileStat.Size()
 
-			readDir, err := os.ReadDir(fileDirName)
-			if err != nil {
-				fmt.Printf("Error reading directory %v", err)
-			}
-
-			for _, file := range readDir {
-				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
+			if fileSize < 2097152000 {
+				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, fileName, fileDirName+"/"+fileName)
 				if err != nil {
 					return c.JSON(http.StatusGone, err)
 				}
 				json.Unmarshal([]byte(sendFile), &uploader)
 				fmt.Printf("fileId: %v", uploader)
+			} else {
+
+				if err := Handlers.ZipNSplit(dst.Name()); err != nil {
+					fmt.Println(err)
+				}
+
+				readDir, err := os.ReadDir(fileDirName)
+				if err != nil {
+					fmt.Printf("Error reading directory %v", err)
+				}
+
+				for _, file := range readDir {
+					sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
+					if err != nil {
+						return c.JSON(http.StatusGone, err)
+					}
+					json.Unmarshal([]byte(sendFile), &uploader)
+					fmt.Printf("fileId: %v", uploader)
+				}
 			}
 			continue
 		}
@@ -138,7 +151,7 @@ func UploadWithCmd(c echo.Context) error {
 			if err != nil {
 				fmt.Println(err)
 			}
-			fileSize,_ := strconv.ParseUint(res.Header.Get("Content-Length"), 10 , 64)
+			fileSize, _ := strconv.ParseUint(res.Header.Get("Content-Length"), 10, 64)
 			fmt.Printf("heres the file size: %v", fileSize)
 			disp := res.Header.Get("Content-Disposition")
 			line := strings.Split(disp, "=")

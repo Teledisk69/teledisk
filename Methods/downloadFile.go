@@ -12,7 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func DownloadFileWCmd(c echo.Context) error {
+func DownloadFile(c echo.Context) error {
 
 	err := godotenv.Load()
 	if err != nil {
@@ -30,7 +30,7 @@ func DownloadFileWCmd(c echo.Context) error {
 		for _, fileId := range fileIds {
 			fileInfo := Handlers.GetFile(baseUrl, fileId)
       rmDefaultFileName, _, _  := strings.Cut(fileInfo.Result.FilePath, "file")
-      newFileName := rmDefaultFileName + "Guardians_Of_The_Galaxy_Vol_3_1080p60fps_mkv"
+      newFileName := rmDefaultFileName
       if err:= os.Rename(fileInfo.Result.FilePath , newFileName);err != nil{fmt.Println(err)}
 			filePaths = append(filePaths, newFileName)
 		}
