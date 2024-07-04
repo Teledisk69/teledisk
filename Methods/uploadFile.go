@@ -3,21 +3,22 @@ package Methods
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"math"
+	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"regexp"
 	"strconv"
-	"tg/telegram-storage/Handlers"
-
+	"strings"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
+	"tg/telegram-storage/Handlers"
 )
 
-// will be splitting here if the size is more than 2gb else it will be saved directly
-func UploadFile(c echo.Context) error {
-
+func UploadWithCmd(c echo.Context) error {
 	type File struct {
 		FileName string `json:"file_name"`
 		FileSize int    `json:"file_size"`
@@ -33,13 +34,14 @@ func UploadFile(c echo.Context) error {
 		Result FileResponse `json:"result"`
 	}
 
-	err := godotenv.Load()
-	if err != nil {
-		fmt.Println("Error loading .env file")
+	//loading baseurl env
+
+	if err := godotenv.Load(); err != nil {
+		log.Panic("Error loading .env file")
+		return c.JSON(http.StatusGone, "base url not found")
 	}
 	baseUrl := os.Getenv("BASE_URL")
 
-	//use multipart reader here
 	newRequest := c.Request()
 	newMultiReader, mrErr := newRequest.MultipartReader()
 	if mrErr != nil {
@@ -48,100 +50,132 @@ func UploadFile(c echo.Context) error {
 	}
 
 	fileDirName := "temp"
-	mkdirErr := os.Mkdir(fileDirName, 0750)
-	if mkdirErr != nil {
-		fmt.Println("dir already exist")
+
+	readTempDir, readDirErr := os.ReadDir(fileDirName)
+	if readDirErr != nil {
+		if errors.Is(readDirErr, os.ErrNotExist) {
+			mkdirErr := os.Mkdir(fileDirName, 0750)
+			if mkdirErr != nil {
+				fmt.Println(mkdirErr)
+			}
+		} else {
+			if err := os.RemoveAll(fileDirName); err != nil {
+				fmt.Println(err)
+			}
+			mkdirErr := os.Mkdir(fileDirName, 0750)
+			if mkdirErr != nil {
+				fmt.Println("dir already exist")
+			}
+		}
 	}
+
+	fmt.Printf("red temp dir: %v ", readTempDir)
 
 	var chatId string
 	var uploader uploadResponse
+
 	for {
 		part, pErr := newMultiReader.NextPart()
+		fmt.Printf("here multipart nextpart output: %v\n", part)
 		if pErr == io.EOF {
 			break
 		}
 
 		if part.FormName() == "chat_id" {
+			fmt.Println("chatid is running")
 			buf := new(bytes.Buffer)
 			buf.ReadFrom(part)
 			chatId = buf.String()
 			continue
 		}
 
-		if part.FileName() == "file" {
-			continue
-		}
+		if part.FileName() != "" {
+			fmt.Println("file is running")
+			fileName := part.FileName()
 
-		dst, err := os.Create(fileDirName + "/" + part.FileName())
-		if err != nil {
-			fmt.Println("Error creating file:", err)
-			return err
-		}
-		defer dst.Close()
+			caption := fileName
+			dst, err := os.Create(fileDirName + "/" + fileName)
+			if err != nil {
+				fmt.Println("Error creating file:", err)
+				return err
+			}
+			defer dst.Close()
 
-		_, err = io.Copy(dst, part)
-		if err != nil {
-			fmt.Println("Error copying file:", err)
-			return err
-		}
-		document, _ := dst.Stat()
-		var fileSize int64 = document.Size()
-
-		const fileChunk = 2097152000        // 2gb split size
-		const fileChunkPremium = 4097152000 // 4gb split for premium user
-		isPremium, err := Handlers.IsPremium(baseUrl)
-		if err != nil {
-			fmt.Println(err)
-		}
-
-    openDocument,err := os.Open(fileDirName + "/" + part.FileName())
-    if err != nil{
-      fmt.Printf("ERROR OPENING FILE %V", err )
-    }
-
-		if isPremium && fileSize > fileChunkPremium || fileSize > fileChunk {
-			fmt.Printf("the file size is : %v", fileSize)
-
-			totalPartsNum := uint64(math.Ceil(float64(fileSize) / float64(fileChunk)))
-			for i := uint64(0); i < totalPartsNum; i++ {
-				partSize := int(math.Min(fileChunk, float64(fileSize-int64(i*fileChunk))))
-				partBuffer := make([]byte, partSize)
-        if _, err := openDocument.Read(partBuffer);err != nil {fmt.Printf("ERROR READING BUFFER %v", err)}
-				// write to disk
-				fileName := strconv.FormatUint(i, 10) + "_" + part.FileName()
-				_, err := os.Create(fileDirName + "/" + fileName)
-				if err != nil {
-					fmt.Println("error while creating file :", err)
-					os.Exit(1)
-				}
-				// write/save buffer to disk
-				if err := os.WriteFile(fileDirName+"/"+fileName, partBuffer, os.ModeAppend); err != nil {
-					fmt.Printf("error writing file %v", err)
-				}
-				fmt.Println("Split to : ", fileName)
-
-				//for _, files := range readDir {
-				fmt.Println("uploading file :" + fileName)
-				sendFile := Handlers.SendDocumentRequest(baseUrl, chatId, fileDirName+"/"+fileName)
-				json.Unmarshal([]byte(sendFile), &uploader)
-				fmt.Println(uploader)
-				//err := os.RemoveAll(files.Name())
-				if err != nil {
-					fmt.Println(err)
-				}
+			_, err = io.Copy(dst, part)
+			if err != nil {
+				fmt.Println("Error copying file:", err)
+				return c.JSON(http.StatusGone, err)
 			}
 
-		} else {
-			fmt.Printf("the file size is %d", fileSize)
-			sendFile := Handlers.SendDocumentRequest(baseUrl, chatId, fileDirName+"/"+part.FileName())
-			json.Unmarshal([]byte(sendFile), &uploader)
-			fmt.Println(uploader)
-			//err := os.RemoveAll(part.FileName())
+			if err := Handlers.ZipNSplit(dst.Name()); err != nil {
+				fmt.Println(err)
+			}
+
+			readDir, err := os.ReadDir(fileDirName)
+			if err != nil {
+				fmt.Printf("Error reading directory %v", err)
+			}
+
+			for _, file := range readDir {
+				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
+				if err != nil {
+					return c.JSON(http.StatusGone, err)
+				}
+				json.Unmarshal([]byte(sendFile), &uploader)
+				fmt.Printf("fileId: %v", uploader)
+			}
+			continue
+		}
+		if part.FormName() == "url" {
+
+			fmt.Println("url is running")
+			buf := new(bytes.Buffer)
+			buf.ReadFrom(part)
+			Url := buf.String()
+
+			client := &http.Client{}
+			res, err := client.Get(Url)
 			if err != nil {
 				fmt.Println(err)
+			}
+			fileSize,_ := strconv.ParseUint(res.Header.Get("Content-Length"), 10 , 64)
+			fmt.Printf("heres the file size: %v", fileSize)
+			disp := res.Header.Get("Content-Disposition")
+			line := strings.Split(disp, "=")
+			filename := line[1]
+			filename = regexp.MustCompile(`[^a-zA-Z0-9. ]+`).ReplaceAllString(filename, "")
+			fmtFileName := strings.ReplaceAll(filename, " ", "")
+			curlDlCmd := exec.Command("curl", "-o", fileDirName+"/"+fmtFileName, Url)
+			if err := curlDlCmd.Run(); err != nil {
+				fmt.Printf("Error downloading %v", err)
+			}
+			if fileSize < 2097152000 {
+				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, filename, fileDirName+"/"+fmtFileName)
+				if err != nil {
+					return c.JSON(http.StatusGone, err)
+				}
+				json.Unmarshal([]byte(sendFile), &uploader)
+				fmt.Printf("fileId: %v", uploader)
+			} else {
+				readDir, err := os.ReadDir(fileDirName)
+				if err != nil {
+					fmt.Printf("Error reading directory %v", err)
+				}
+
+				for _, file := range readDir {
+					if err := Handlers.ZipNSplit(file.Name()); err != nil {
+						fmt.Println(err)
+					}
+					caption := file.Name()
+					sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
+					if err != nil {
+						return c.JSON(http.StatusGone, err)
+					}
+					json.Unmarshal([]byte(sendFile), &uploader)
+					fmt.Printf("fileId: %v", uploader)
+				}
 			}
 		}
 	}
 	return c.JSON(http.StatusOK, uploader)
 }
-
