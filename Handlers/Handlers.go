@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -42,13 +43,13 @@ func IsPremium(baseUrl string) (bool, error) {
 	return false, errors.New("error getting user info")
 }
 
-func SendDocumentRequest(baseUrl, chat_id, caption , document string) ([]byte, error) {
+func SendDocumentRequest(baseUrl, chat_id, caption, document string) ([]byte, error) {
 	sendDocumentUrl := baseUrl + "/sendDocument"
 
 	file, err := os.Open(document)
 	if err != nil {
 		log.Fatal(err)
-		return nil, errors.New("cannot open")
+		return nil, err
 	}
 	defer file.Close()
 
@@ -96,7 +97,7 @@ func SendDocumentRequest(baseUrl, chat_id, caption , document string) ([]byte, e
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-  fmt.Printf("heres body for send document : %v\n", string(body))
+	fmt.Printf("heres body for send document : %v\n", string(body))
 	return body, nil
 }
 
@@ -146,8 +147,7 @@ func GetFile(baseUrl, fileId string) FileResult {
 	return bodyResponse
 }
 
-
-func ZipNSplit(fileName string) error {
+func ZipNSplit(fileName string) ([]fs.DirEntry, error) {
 	fileDirName := "temp"
 
 	var tarArgs = "-cvzf"
@@ -156,14 +156,14 @@ func ZipNSplit(fileName string) error {
 	tarCmd := exec.Command("tar", tarArgs, fileDirName+"/"+tarFileName, fileDirName+"/"+fileName)
 	if err := tarCmd.Run(); err != nil {
 		fmt.Printf("error zipping the file %v", err)
-		return err
+		return nil, err
 	}
 
 	var splitArgs = "-b 2000M"
 	splitCmd := exec.Command("split", splitArgs, fileDirName+"/"+tarFileName, fileDirName+"/"+tarFileName+".part")
 	if err := splitCmd.Run(); err != nil {
 		fmt.Printf("error splitting the file %v", err)
-		return err
+		return nil, err
 	}
 	if err := os.Remove(fileDirName + "/" + fileName); err != nil {
 		fmt.Printf("Error deleting file %v", err)
@@ -171,5 +171,11 @@ func ZipNSplit(fileName string) error {
 	if err := os.Remove(fileDirName + "/" + tarFileName); err != nil {
 		fmt.Printf("Error deleting file %v", err)
 	}
-	return nil
+
+	readDir, err := os.ReadDir(fileDirName)
+	if err != nil {
+		fmt.Printf("Error reading directory %v", err)
+	}
+
+	return readDir, nil
 }

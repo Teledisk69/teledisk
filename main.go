@@ -14,7 +14,7 @@ func main(){
 		return c.String(http.StatusOK, "teledisk online!")
 	})
 
-  app.POST("/uploadFile" ,Methods.UploadWithCmd)
-  app.GET("/downloadFile", Methods.DownloadFileWCmd)
+  app.POST("/uploadFile" ,Methods.UploadFile)
+  app.GET("/downloadFile", Methods.DownloadFile)
   app.Start(":1234")
 }

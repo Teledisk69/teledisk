@@ -51,38 +51,29 @@ func UploadFile(c echo.Context) error {
 
 	fileDirName := "temp"
 
-	readTempDir, readDirErr := os.ReadDir(fileDirName)
-	if readDirErr != nil {
-		if errors.Is(readDirErr, os.ErrNotExist) {
-			mkdirErr := os.Mkdir(fileDirName, 0750)
-			if mkdirErr != nil {
-				fmt.Println(mkdirErr)
-			}
-		} else {
+	mkdirErr := os.Mkdir(fileDirName, 0750)
+	if mkdirErr != nil {
+		if errors.Is(mkdirErr, os.ErrExist) {
 			if err := os.RemoveAll(fileDirName); err != nil {
-				fmt.Println(err)
+				fmt.Printf("Error deleting temp dir: %v ", err)
 			}
 			mkdirErr := os.Mkdir(fileDirName, 0750)
 			if mkdirErr != nil {
-				fmt.Println("dir already exist")
+				fmt.Printf("Error creating temp folder: %v", mkdirErr)
 			}
 		}
 	}
 
-	fmt.Printf("red temp dir: %v ", readTempDir)
-
 	var chatId string
-	var uploader uploadResponse
+	var uploader []uploadResponse
 
 	for {
 		part, pErr := newMultiReader.NextPart()
-		fmt.Printf("here multipart nextpart output: %v\n", part)
 		if pErr == io.EOF {
 			break
 		}
 
 		if part.FormName() == "chat_id" {
-			fmt.Println("chatid is running")
 			buf := new(bytes.Buffer)
 			buf.ReadFrom(part)
 			chatId = buf.String()
@@ -90,7 +81,6 @@ func UploadFile(c echo.Context) error {
 		}
 
 		if part.FileName() != "" {
-			fmt.Println("file is running")
 			fileName := part.FileName()
 
 			caption := fileName
@@ -115,33 +105,30 @@ func UploadFile(c echo.Context) error {
 				if err != nil {
 					return c.JSON(http.StatusGone, err)
 				}
+        if err := os.Remove(fileDirName+"/"+ fileName);err != nil{fmt.Printf("Error deleting file: %v " , err)}
 				json.Unmarshal([]byte(sendFile), &uploader)
-				fmt.Printf("fileId: %v", uploader)
+				fmt.Printf("upload response: %v", uploader)
 			} else {
 
-				if err := Handlers.ZipNSplit(dst.Name()); err != nil {
+				dirInfo, err := Handlers.ZipNSplit(dst.Name())
+				if err != nil {
 					fmt.Println(err)
 				}
 
-				readDir, err := os.ReadDir(fileDirName)
-				if err != nil {
-					fmt.Printf("Error reading directory %v", err)
-				}
-
-				for _, file := range readDir {
+				for _, file := range dirInfo {
 					sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
 					if err != nil {
 						return c.JSON(http.StatusGone, err)
 					}
-					json.Unmarshal([]byte(sendFile), &uploader)
-					fmt.Printf("fileId: %v", uploader)
+					var tempResponse uploadResponse
+					json.Unmarshal([]byte(sendFile), &tempResponse)
+					uploader = append(uploader, tempResponse)
+					fmt.Printf("upload response: %v", uploader)
 				}
 			}
 			continue
 		}
 		if part.FormName() == "url" {
-
-			fmt.Println("url is running")
 			buf := new(bytes.Buffer)
 			buf.ReadFrom(part)
 			Url := buf.String()
@@ -152,7 +139,7 @@ func UploadFile(c echo.Context) error {
 				fmt.Println(err)
 			}
 			fileSize, _ := strconv.ParseUint(res.Header.Get("Content-Length"), 10, 64)
-			fmt.Printf("heres the file size: %v", fileSize)
+			fmt.Printf("file size: %v", fileSize)
 			disp := res.Header.Get("Content-Disposition")
 			line := strings.Split(disp, "=")
 			filename := line[1]
@@ -163,10 +150,12 @@ func UploadFile(c echo.Context) error {
 				fmt.Printf("Error downloading %v", err)
 			}
 			if fileSize < 2097152000 {
-				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, filename, fileDirName+"/"+fmtFileName)
+				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, line[1], fileDirName+"/"+fmtFileName)
 				if err != nil {
 					return c.JSON(http.StatusGone, err)
 				}
+
+        if err := os.Remove(fileDirName+"/"+ fmtFileName);err != nil{fmt.Printf("Error deleting file: %v " , err)}
 				json.Unmarshal([]byte(sendFile), &uploader)
 				fmt.Printf("fileId: %v", uploader)
 			} else {
@@ -174,18 +163,23 @@ func UploadFile(c echo.Context) error {
 				if err != nil {
 					fmt.Printf("Error reading directory %v", err)
 				}
-
 				for _, file := range readDir {
-					if err := Handlers.ZipNSplit(file.Name()); err != nil {
+					dirInfo, err := Handlers.ZipNSplit(file.Name())
+					if err != nil {
 						fmt.Println(err)
 					}
 					caption := file.Name()
-					sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+file.Name())
-					if err != nil {
-						return c.JSON(http.StatusGone, err)
+
+					for _, zippedfiles := range dirInfo {
+						sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, caption, fileDirName+"/"+zippedfiles.Name())
+						if err != nil {
+							return c.JSON(http.StatusGone, err)
+						}
+						var tempResponse uploadResponse
+						json.Unmarshal([]byte(sendFile), &tempResponse)
+						uploader = append(uploader, tempResponse)
+						fmt.Printf("upload response: %v", tempResponse)
 					}
-					json.Unmarshal([]byte(sendFile), &uploader)
-					fmt.Printf("fileId: %v", uploader)
 				}
 			}
 		}
