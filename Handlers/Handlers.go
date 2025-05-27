@@ -48,12 +48,12 @@ func SendDocumentRequest(baseUrl, chat_id, caption, document string) ([]byte, er
 
 	file, err := os.Open(document)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err.Error())
 		return nil, err
 	}
 	defer file.Close()
 
-	fmt.Println(file.Stat())
+	log.Println(file.Stat())
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
@@ -75,16 +75,16 @@ func SendDocumentRequest(baseUrl, chat_id, caption, document string) ([]byte, er
 			return
 		}
 		if err := mw.WriteField("caption", caption); err != nil {
-			fmt.Println(err)
+			log.Println(err.Error())
 		}
 		if err := mw.WriteField("chat_id", chat_id); err != nil {
-			fmt.Println(err)
+			log.Println(err.Error())
 		}
 	}()
 
 	req, err := http.NewRequest("POST", sendDocumentUrl, pr)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err.Error())
 	}
 
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -92,12 +92,12 @@ func SendDocumentRequest(baseUrl, chat_id, caption, document string) ([]byte, er
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		panic(err)
+		log.Println(err.Error())
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("heres body for send document : %v\n", string(body))
+	body, err := io.ReadAll(resp.Body)
+	log.Printf(`response: %v`, string(body))
 	return body, nil
 }
 

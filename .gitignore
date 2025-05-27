@@ -1,1 +1,55 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output of the go build
+/bin/
+/dist/
+
+# Dependencies
+/vendor/
+
+# Go workspace file
+go.work
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output files from go cover
+*.out
+coverage.html
+
+# Dependency directories (if not using modules)
+deps/
+pkg/
+
+# Common configuration files
 .env
+*.env
+*.log
+
+# Editor/IDE specific files
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+
+# macOS specific
+.DS_Store
+
+# Documentation output
+/docs/
+
+# Temporary files
+tmp/
+temp/
+
+#build files
+build/
+#telegram bot api
+telegram-bot-api/
+

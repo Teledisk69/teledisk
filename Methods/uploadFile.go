@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
 	"io"
 	"log"
 	"net/http"
@@ -16,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"tg/telegram-storage/Handlers"
+
+	"github.com/joho/godotenv"
+	"github.com/labstack/echo/v4"
 )
 
 func UploadFile(c echo.Context) error {
@@ -45,7 +45,7 @@ func UploadFile(c echo.Context) error {
 	newRequest := c.Request()
 	newMultiReader, mrErr := newRequest.MultipartReader()
 	if mrErr != nil {
-		fmt.Println(mrErr)
+		log.Println(mrErr.Error())
 		return mrErr
 	}
 
@@ -55,11 +55,11 @@ func UploadFile(c echo.Context) error {
 	if mkdirErr != nil {
 		if errors.Is(mkdirErr, os.ErrExist) {
 			if err := os.RemoveAll(fileDirName); err != nil {
-				fmt.Printf("Error deleting temp dir: %v ", err)
+				log.Printf("Error deleting temp dir: %v ", err.Error())
 			}
 			mkdirErr := os.Mkdir(fileDirName, 0750)
 			if mkdirErr != nil {
-				fmt.Printf("Error creating temp folder: %v", mkdirErr)
+				log.Printf("Error creating temp folder: %v", mkdirErr.Error())
 			}
 		}
 	}
@@ -86,14 +86,14 @@ func UploadFile(c echo.Context) error {
 			caption := fileName
 			dst, err := os.Create(fileDirName + "/" + fileName)
 			if err != nil {
-				fmt.Println("Error creating file:", err)
+				log.Println("Error creating file:", err.Error())
 				return err
 			}
 			defer dst.Close()
 
 			_, err = io.Copy(dst, part)
 			if err != nil {
-				fmt.Println("Error copying file:", err)
+				log.Println("Error copying file:", err.Error())
 				return c.JSON(http.StatusGone, err)
 			}
 
@@ -105,14 +105,16 @@ func UploadFile(c echo.Context) error {
 				if err != nil {
 					return c.JSON(http.StatusGone, err)
 				}
-        if err := os.Remove(fileDirName+"/"+ fileName);err != nil{fmt.Printf("Error deleting file: %v " , err)}
+				if err := os.Remove(fileDirName + "/" + fileName); err != nil {
+					log.Printf("Error deleting file: %v ", err.Error())
+				}
 				json.Unmarshal([]byte(sendFile), &uploader)
-				fmt.Printf("upload response: %v", uploader)
+				log.Printf("upload response: %v", uploader)
 			} else {
 
 				dirInfo, err := Handlers.ZipNSplit(dst.Name())
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err.Error())
 				}
 
 				for _, file := range dirInfo {
@@ -123,7 +125,7 @@ func UploadFile(c echo.Context) error {
 					var tempResponse uploadResponse
 					json.Unmarshal([]byte(sendFile), &tempResponse)
 					uploader = append(uploader, tempResponse)
-					fmt.Printf("upload response: %v", uploader)
+					log.Printf("upload response: %v", uploader)
 				}
 			}
 			continue
@@ -136,10 +138,10 @@ func UploadFile(c echo.Context) error {
 			client := &http.Client{}
 			res, err := client.Get(Url)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err.Error())
 			}
 			fileSize, _ := strconv.ParseUint(res.Header.Get("Content-Length"), 10, 64)
-			fmt.Printf("file size: %v", fileSize)
+			log.Printf("file size: %v", fileSize)
 			disp := res.Header.Get("Content-Disposition")
 			line := strings.Split(disp, "=")
 			filename := line[1]
@@ -147,7 +149,7 @@ func UploadFile(c echo.Context) error {
 			fmtFileName := strings.ReplaceAll(filename, " ", "")
 			curlDlCmd := exec.Command("curl", "-o", fileDirName+"/"+fmtFileName, Url)
 			if err := curlDlCmd.Run(); err != nil {
-				fmt.Printf("Error downloading %v", err)
+				log.Printf("Error downloading %v", err.Error())
 			}
 			if fileSize < 2097152000 {
 				sendFile, err := Handlers.SendDocumentRequest(baseUrl, chatId, line[1], fileDirName+"/"+fmtFileName)
@@ -155,18 +157,20 @@ func UploadFile(c echo.Context) error {
 					return c.JSON(http.StatusGone, err)
 				}
 
-        if err := os.Remove(fileDirName+"/"+ fmtFileName);err != nil{fmt.Printf("Error deleting file: %v " , err)}
+				if err := os.Remove(fileDirName + "/" + fmtFileName); err != nil {
+					log.Printf("Error deleting file: %v ", err.Error())
+				}
 				json.Unmarshal([]byte(sendFile), &uploader)
-				fmt.Printf("fileId: %v", uploader)
+				log.Printf("fileId: %v", uploader)
 			} else {
 				readDir, err := os.ReadDir(fileDirName)
 				if err != nil {
-					fmt.Printf("Error reading directory %v", err)
+					log.Printf("Error reading directory %v", err.Error())
 				}
 				for _, file := range readDir {
 					dirInfo, err := Handlers.ZipNSplit(file.Name())
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err.Error())
 					}
 					caption := file.Name()
 
@@ -178,7 +182,7 @@ func UploadFile(c echo.Context) error {
 						var tempResponse uploadResponse
 						json.Unmarshal([]byte(sendFile), &tempResponse)
 						uploader = append(uploader, tempResponse)
-						fmt.Printf("upload response: %v", tempResponse)
+						log.Printf("upload response: %v", tempResponse)
 					}
 				}
 			}

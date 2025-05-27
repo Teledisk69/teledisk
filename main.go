@@ -16,5 +16,5 @@ func main(){
 
   app.POST("/uploadFile" ,Methods.UploadFile)
   app.GET("/downloadFile", Methods.DownloadFile)
-  app.Start(":1234")
+  app.Start(":6969")
 }
